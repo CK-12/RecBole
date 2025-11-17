@@ -207,7 +207,7 @@ class FieldAwareFactorizationMachine(nn.Module):
                 ]
             )
             self.token_offsets = np.array(
-                (0, *np.cumsum(self.token_feature_dims)[:-1]), dtype=np.long
+                (0, *np.cumsum(self.token_feature_dims)[:-1]), dtype=np.int64
             )
             for embedding in self.token_embeddings:
                 nn.init.xavier_uniform_(embedding.weight.data)
@@ -215,7 +215,7 @@ class FieldAwareFactorizationMachine(nn.Module):
         if len(self.float_feature_names) > 0:
             self.num_float_features = len(self.float_feature_names)
             self.float_offsets = np.array(
-                (0, *np.cumsum(self.float_feature_dims)[:-1]), dtype=np.long
+                (0, *np.cumsum(self.float_feature_dims)[:-1]), dtype=np.int64
             )
             self.float_embeddings = torch.nn.ModuleList(
                 [

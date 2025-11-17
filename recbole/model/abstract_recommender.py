@@ -306,14 +306,14 @@ class ContextRecommender(AbstractRecommender):
             self.num_feature_field += 1
         if len(self.token_field_dims) > 0:
             self.token_field_offsets = np.array(
-                (0, *np.cumsum(self.token_field_dims)[:-1]), dtype=np.long
+                (0, *np.cumsum(self.token_field_dims)[:-1]), dtype=np.int64
             )
             self.token_embedding_table = FMEmbedding(
                 self.token_field_dims, self.token_field_offsets, self.embedding_size
             )
         if len(self.float_field_dims) > 0:
             self.float_field_offsets = np.array(
-                (0, *np.cumsum(self.float_field_dims)[:-1]), dtype=np.long
+                (0, *np.cumsum(self.float_field_dims)[:-1]), dtype=np.int64
             )
             self.float_embedding_table = FLEmbedding(
                 self.float_field_dims, self.float_field_offsets, self.embedding_size
