@@ -25,7 +25,7 @@ from recbole.utils import InputType
 
 
 class SpectralCF(GeneralRecommender):
-    r"""SpectralCF is a spectral convolution model that directly learns latent factors of users and items 
+    r"""SpectralCF is a spectral convolution model that directly learns latent factors of users and items
     from the spectral domain for recommendation.
 
     The spectral convolution operation with C input channels and F filters is shown as the following:
@@ -36,8 +36,8 @@ class SpectralCF(GeneralRecommender):
         \left[\begin{array}{c} X^{u} \\
         X^{i} \end{array}\right] \Theta^{\prime}\right)
 
-    where :math:`X_{new}^{u} \in R^{n_{users} \times F}` and :math:`X_{new}^{i} \in R^{n_{items} \times F}` 
-    denote convolution results learned with F filters from the spectral domain for users and items, respectively; 
+    where :math:`X_{new}^{u} \in R^{n_{users} \times F}` and :math:`X_{new}^{i} \in R^{n_{items} \times F}`
+    denote convolution results learned with F filters from the spectral domain for users and items, respectively;
     :math:`\sigma` denotes the logistic sigmoid function.
 
     Note:
@@ -120,7 +120,11 @@ class SpectralCF(GeneralRecommender):
                 )
             )
         )
-        A._update(data_dict)
+        if hasattr(A, '_update'):
+            A._update(data_dict)
+        else:
+            for (row, col), value in data_dict.items():
+                A[row, col] = value
 
         # norm adj matrix
         sumArr = (A > 0).sum(axis=1)

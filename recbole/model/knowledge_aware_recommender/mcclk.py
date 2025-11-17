@@ -422,7 +422,11 @@ class MCCLK(KnowledgeRecommender):
                 )
             )
         )
-        A._update(data_dict)
+        if hasattr(A, '_update'):
+            A._update(data_dict)
+        else:
+            for (row, col), value in data_dict.items():
+                A[row, col] = value
         # norm adj matrix
         if mode == "bi":
             L = _bi_norm_lap(A)
