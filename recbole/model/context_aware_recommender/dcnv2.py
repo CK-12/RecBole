@@ -38,7 +38,7 @@ class DCNV2(ContextRecommender):
         self.structure = config["structure"]
         self.cross_layer_num = config["cross_layer_num"]
         self.embedding_size = config["embedding_size"]
-        self.mlp_hidden_size = config["mlp_hidden_size"]
+        self.mlp_hidden_size = list(config["mlp_hidden_size"])
         self.reg_weight = config["reg_weight"]
         self.dropout_prob = config["dropout_prob"]
 
