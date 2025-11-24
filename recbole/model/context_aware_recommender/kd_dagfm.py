@@ -49,7 +49,7 @@ class KD_DAGFM(ContextRecommender):
         self.loss_fn = nn.BCELoss()
 
         # get warm up parameters
-        if self.phase != "teacher_training" and self.training:
+        if self.phase != "teacher_training":
             if "warm_up" not in config:
                 raise ValueError("Must have warm up!")
             else:
