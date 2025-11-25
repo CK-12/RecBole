@@ -116,7 +116,7 @@ class KD_DAGFM(ContextRecommender):
 class DAGFM(nn.Module):
     def __init__(self, config):
         super(DAGFM, self).__init__()
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and config['gpu_id'] is not None:
             self.device = torch.device(f"cuda:{config['gpu_id']}")
         else:
             self.device = torch.device("cpu")
@@ -249,7 +249,7 @@ class CIN(nn.Module):
         nn.init.normal_(self.linear, mean=0, std=0.01)
         self.backbone = ["cin", "linear"]
         self.loss_fn = nn.BCELoss()
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and config['gpu_id'] is not None:
             self.device = torch.device(f"cuda:{config['gpu_id']}")
         else:
             self.device = torch.device("cpu")
