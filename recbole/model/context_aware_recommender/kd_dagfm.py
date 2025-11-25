@@ -117,7 +117,7 @@ class DAGFM(nn.Module):
     def __init__(self, config):
         super(DAGFM, self).__init__()
         if torch.cuda.is_available():
-            self.device = torch.device("cuda")
+            self.device = torch.device(f"cuda:{config['gpu_id']}")
         else:
             self.device = torch.device("cpu")
 
@@ -250,7 +250,7 @@ class CIN(nn.Module):
         self.backbone = ["cin", "linear"]
         self.loss_fn = nn.BCELoss()
         if torch.cuda.is_available():
-            self.device = torch.device("cuda")
+            self.device = torch.device(f"cuda:{config['gpu_id']}")
         else:
             self.device = torch.device("cpu")
 
