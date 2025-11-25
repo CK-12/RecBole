@@ -612,3 +612,98 @@ class ContextRecommender(AbstractRecommender):
         # sparse_embedding shape: [batch_size, num_token_seq_field+num_token_field, embed_dim] or None
         # dense_embedding shape: [batch_size, num_float_field, 2] or [batch_size, num_float_field, embed_dim] or None
         return sparse_embedding, dense_embedding
+
+
+class ContextRecommenderWithEmbeddings(ContextRecommender):
+    """This is a context-aware recommender that supports pre-computed embeddings.
+
+    This class extends ContextRecommender to allow passing pre-computed embedding vectors
+    (e.g., from text encoders) directly as input features without re-embedding them.
+
+    All existing context recommender models (EulerNet, KD_DAGFM, DeepFM, etc.) can inherit
+    from this class instead of ContextRecommender to gain support for pre-computed embeddings.
+
+    To use pre-computed embeddings:
+    1. Specify field names in config['precomputed_embedding_fields']
+    2. Pass embeddings with shape [batch_size, embedding_dim] or [batch_size, num_fields, embedding_dim]
+    3. Add embeddings to interaction: interaction['field_name'] = embeddings_tensor
+    """
+
+    def __init__(self, config, dataset):
+        super(ContextRecommenderWithEmbeddings, self).__init__(config, dataset)
+
+        # Get list of fields that contain pre-computed embeddings (e.g., from text encoders)
+        self.precomputed_embedding_fields = config.get('precomputed_embedding_fields', [])
+
+    def embed_input_fields(self, interaction):
+        """Embed the whole feature columns, handling pre-computed embeddings.
+
+        This method overrides the parent class to support pre-computed embeddings.
+        If a field is in precomputed_embedding_fields and has the right shape,
+        it will be used directly without re-embedding.
+
+        Args:
+            interaction (Interaction): The input data collection.
+
+        Returns:
+            torch.FloatTensor: The embedding tensor of token sequence columns.
+            torch.FloatTensor: The embedding tensor of float sequence columns (including pre-computed).
+        """
+        # Handle pre-computed embeddings first
+        precomputed_embeddings = []
+
+        for field_name in self.precomputed_embedding_fields:
+            if field_name in interaction:
+                embedding = interaction[field_name]
+                # Check if it's already an embedding vector
+                if len(embedding.shape) == 2:
+                    # Shape: [batch_size, embedding_dim]
+                    # Add dimension to match expected format: [batch_size, 1, embedding_dim]
+                    embedding = embedding.unsqueeze(1)
+                    precomputed_embeddings.append(embedding)
+                elif len(embedding.shape) == 3:
+                    # Shape: [batch_size, num_fields, embedding_dim]
+                    precomputed_embeddings.append(embedding)
+                else:
+                    self.logger.warning(
+                        f"Field {field_name} has unexpected shape {embedding.shape}. "
+                        f"Expected [batch_size, embedding_dim] or [batch_size, num_fields, embedding_dim]. "
+                        f"Skipping pre-computed embedding for this field."
+                    )
+
+        # Get regular embeddings from parent class
+        # Temporarily filter out pre-computed fields to avoid double processing
+        original_float_field_names = self.float_field_names.copy()
+        self.float_field_names = [
+            f for f in self.float_field_names
+            if f not in self.precomputed_embedding_fields
+        ]
+
+        # Get regular embeddings
+        sparse_embedding, dense_embedding = super().embed_input_fields(interaction)
+
+        # Restore original float_field_names
+        self.float_field_names = original_float_field_names
+
+        # Combine pre-computed embeddings with regular dense embeddings
+        if len(precomputed_embeddings) > 0:
+            precomputed_tensor = torch.cat(precomputed_embeddings, dim=1)  # [batch_size, num_precomputed_fields, embed_dim]
+
+            if dense_embedding is None:
+                dense_embedding = precomputed_tensor
+            else:
+                # Ensure dense_embedding has the right shape
+                # It should be [batch_size, num_float_field, embed_dim] from parent class
+                if len(dense_embedding.shape) == 2:
+                    # This shouldn't happen, but handle edge case
+                    # If shape is [batch_size, num_float_field, 2], we need to embed it
+                    if dense_embedding.shape[-1] == 2:
+                        dense_embedding = self.embed_float_fields(dense_embedding)
+                    else:
+                        # Unexpected shape, add dimension
+                        dense_embedding = dense_embedding.unsqueeze(1)
+
+                # Concatenate: [batch_size, num_regular_fields + num_precomputed_fields, embed_dim]
+                dense_embedding = torch.cat([dense_embedding, precomputed_tensor], dim=1)
+
+        return sparse_embedding, dense_embedding
