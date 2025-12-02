@@ -121,6 +121,24 @@ class KD_DAGFM(ContextRecommenderWithEmbeddings):  # Changed base class
    - Combines it with regular embeddings
 4. All other functionality remains unchanged
 
+## Double Tower Mode
+
+For models using double tower architecture (e.g., DSSM), you need to specify which pre-computed embeddings belong to user vs item:
+
+```python
+config_dict = {
+    'model': 'YourModel',
+    'double_tower': True,
+    'embedding_size': 768,
+    'precomputed_embedding_fields_user': ['user_text_embedding'],  # User embeddings
+    'precomputed_embedding_fields_item': ['item_text_embedding'],  # Item embeddings
+    # ... other config
+}
+```
+
+If you don't specify `precomputed_embedding_fields_user` and `precomputed_embedding_fields_item`,
+all embeddings in `precomputed_embedding_fields` will be treated as item embeddings (common case).
+
 ## Important Notes
 
 1. **Embedding Dimension**: The `embedding_size` in config must match your pre-computed embedding dimension.
@@ -132,6 +150,8 @@ class KD_DAGFM(ContextRecommenderWithEmbeddings):  # Changed base class
    - Multiple embeddings per sample: `[batch_size, num_fields, embedding_dim]`
 
 4. **Device**: Make sure embeddings are on the same device as your model.
+
+5. **Double Tower**: For double tower models, use `precomputed_embedding_fields_user` and `precomputed_embedding_fields_item` to specify which embeddings belong to which tower.
 
 5. **No Code Changes Needed**: Once you change the base class, all existing model code (forward, calculate_loss, etc.) works without modification!
 

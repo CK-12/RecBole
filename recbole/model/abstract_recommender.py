@@ -635,6 +635,18 @@ class ContextRecommenderWithEmbeddings(ContextRecommender):
         # Get list of fields that contain pre-computed embeddings (e.g., from text encoders)
         self.precomputed_embedding_fields = config.get('precomputed_embedding_fields', [])
 
+        # For double tower mode, separate user and item pre-computed embeddings
+        if self.double_tower:
+            self.precomputed_embedding_fields_user = config.get('precomputed_embedding_fields_user', [])
+            self.precomputed_embedding_fields_item = config.get('precomputed_embedding_fields_item', [])
+            # If not specified separately, treat all as item embeddings (common case)
+            if not self.precomputed_embedding_fields_user and not self.precomputed_embedding_fields_item:
+                self.precomputed_embedding_fields_item = self.precomputed_embedding_fields.copy()
+                self.precomputed_embedding_fields_user = []
+        else:
+            self.precomputed_embedding_fields_user = []
+            self.precomputed_embedding_fields_item = []
+
     def embed_input_fields(self, interaction):
         """Embed the whole feature columns, handling pre-computed embeddings.
 
@@ -707,3 +719,144 @@ class ContextRecommenderWithEmbeddings(ContextRecommender):
                 dense_embedding = torch.cat([dense_embedding, precomputed_tensor], dim=1)
 
         return sparse_embedding, dense_embedding
+
+    def double_tower_embed_input_fields(self, interaction):
+        """Embed the whole feature columns in a double tower way, handling pre-computed embeddings.
+
+        This method overrides the parent class to properly handle pre-computed embeddings
+        in double tower mode by separating user and item embeddings.
+
+        Args:
+            interaction (Interaction): The input data collection.
+
+        Returns:
+            torch.FloatTensor: The embedding tensor of token sequence columns in the first part.
+            torch.FloatTensor: The embedding tensor of float sequence columns in the first part.
+            torch.FloatTensor: The embedding tensor of token sequence columns in the second part.
+            torch.FloatTensor: The embedding tensor of float sequence columns in the second part.
+        """
+        if not self.double_tower:
+            raise RuntimeError(
+                "Please check your model hyper parameters and set 'double tower' as True"
+            )
+
+        # Handle pre-computed embeddings separately for user and item
+        precomputed_user_embeddings = []
+        precomputed_item_embeddings = []
+
+        for field_name in self.precomputed_embedding_fields_user:
+            if field_name in interaction:
+                embedding = interaction[field_name]
+                if len(embedding.shape) == 2:
+                    embedding = embedding.unsqueeze(1)
+                precomputed_user_embeddings.append(embedding)
+
+        for field_name in self.precomputed_embedding_fields_item:
+            if field_name in interaction:
+                embedding = interaction[field_name]
+                if len(embedding.shape) == 2:
+                    embedding = embedding.unsqueeze(1)
+                precomputed_item_embeddings.append(embedding)
+
+        # Temporarily filter out pre-computed fields to avoid double processing
+        original_float_field_names = self.float_field_names.copy()
+        all_precomputed_fields = self.precomputed_embedding_fields_user + self.precomputed_embedding_fields_item
+        self.float_field_names = [
+            f for f in self.float_field_names
+            if f not in all_precomputed_fields
+        ]
+
+        # Get regular embeddings from parent class
+        sparse_embedding, dense_embedding = super().embed_input_fields(interaction)
+
+        # Restore original float_field_names
+        self.float_field_names = original_float_field_names
+
+        # Combine pre-computed embeddings with regular dense embeddings
+        # For double tower, we need to insert user embeddings before item embeddings
+        if len(precomputed_user_embeddings) > 0 or len(precomputed_item_embeddings) > 0:
+            user_dense_parts = []
+            item_dense_parts = []
+
+            # Split regular dense embedding into user and item parts
+            if dense_embedding is not None:
+                if len(dense_embedding.shape) == 2 and dense_embedding.shape[-1] == 2:
+                    dense_embedding = self.embed_float_fields(dense_embedding)
+                elif len(dense_embedding.shape) == 2:
+                    dense_embedding = dense_embedding.unsqueeze(1)
+
+                # Split regular embeddings
+                if dense_embedding.shape[1] > 0:
+                    regular_user, regular_item = torch.split(
+                        dense_embedding,
+                        [self.user_float_field_num, self.item_float_field_num],
+                        dim=1,
+                    )
+                    if regular_user.shape[1] > 0:
+                        user_dense_parts.append(regular_user)
+                    if regular_item.shape[1] > 0:
+                        item_dense_parts.append(regular_item)
+
+            # Add pre-computed user embeddings
+            if len(precomputed_user_embeddings) > 0:
+                user_dense_parts.append(torch.cat(precomputed_user_embeddings, dim=1))
+
+            # Add pre-computed item embeddings
+            if len(precomputed_item_embeddings) > 0:
+                item_dense_parts.append(torch.cat(precomputed_item_embeddings, dim=1))
+
+            # Combine parts
+            if len(user_dense_parts) > 0:
+                first_dense_embedding = torch.cat(user_dense_parts, dim=1)
+            else:
+                first_dense_embedding = None
+
+            if len(item_dense_parts) > 0:
+                second_dense_embedding = torch.cat(item_dense_parts, dim=1)
+            else:
+                second_dense_embedding = None
+        else:
+            # No pre-computed embeddings, use parent's split
+            if dense_embedding is not None:
+                if len(dense_embedding.shape) == 2 and dense_embedding.shape[-1] == 2:
+                    dense_embedding = self.embed_float_fields(dense_embedding)
+                elif len(dense_embedding.shape) == 2:
+                    dense_embedding = dense_embedding.unsqueeze(1)
+
+                first_dense_embedding, second_dense_embedding = torch.split(
+                    dense_embedding,
+                    [self.user_float_field_num, self.item_float_field_num],
+                    dim=1,
+                )
+            else:
+                first_dense_embedding, second_dense_embedding = None, None
+
+        # Handle sparse embeddings (same as parent)
+        if sparse_embedding is not None:
+            sizes = [
+                self.user_token_seq_field_num,
+                self.item_token_seq_field_num,
+                self.user_token_field_num,
+                self.item_token_field_num,
+            ]
+            (
+                first_token_seq_embedding,
+                second_token_seq_embedding,
+                first_token_embedding,
+                second_token_embedding,
+            ) = torch.split(sparse_embedding, sizes, dim=1)
+            first_sparse_embedding = torch.cat(
+                [first_token_seq_embedding, first_token_embedding], dim=1
+            )
+            second_sparse_embedding = torch.cat(
+                [second_token_seq_embedding, second_token_embedding], dim=1
+            )
+        else:
+            first_sparse_embedding, second_sparse_embedding = None, None
+
+        return (
+            first_sparse_embedding,
+            first_dense_embedding,
+            second_sparse_embedding,
+            second_dense_embedding,
+        )
