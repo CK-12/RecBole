@@ -28,7 +28,7 @@ from recbole.model.abstract_recommender import ContextRecommenderWithEmbeddings
 from recbole.model.loss import RegLoss
 
 
-class EulerNet(ContextRecommenderWithEmbeddings):
+class EulerNetWithEmbeddings(ContextRecommenderWithEmbeddings):
     r"""EulerNet is a context-based recommendation model.
     It can adaptively learn the arbitrary-order feature interactions in a complex vector space
     by conducting space mapping according to Euler's formula. Meanwhile, it can jointly capture
@@ -38,7 +38,7 @@ class EulerNet(ContextRecommenderWithEmbeddings):
     """
 
     def __init__(self, config, dataset):
-        super(EulerNet, self).__init__(config, dataset)
+        super(EulerNetWithEmbeddings, self).__init__(config, dataset)
         field_num = self.field_num = self.num_feature_field
         shape_list = [config.embedding_size * field_num] + [
             num_neurons * config.embedding_size for num_neurons in config.order_list

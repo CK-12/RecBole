@@ -28,7 +28,7 @@ from recbole.model.init import xavier_normal_initialization
 from recbole.model.abstract_recommender import ContextRecommenderWithEmbeddings
 
 
-class KD_DAGFM(ContextRecommenderWithEmbeddings):
+class KD_DAGFMWithEmbeddings(ContextRecommenderWithEmbeddings):
     r"""KD_DAGFM is a context-based recommendation model. The model is based on directed acyclic graph and knowledge
     distillation. It can learn arbitrary feature interactions from the complex teacher networks and achieve
     approximately lossless model performance. It can also greatly reduce the computational resource costs.
@@ -37,7 +37,7 @@ class KD_DAGFM(ContextRecommenderWithEmbeddings):
     """
 
     def __init__(self, config, dataset):
-        super(KD_DAGFM, self).__init__(config, dataset)
+        super(KD_DAGFMWithEmbeddings, self).__init__(config, dataset)
 
         # load parameters info
         self.phase = config["phase"]
