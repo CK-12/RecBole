@@ -248,6 +248,9 @@ class ContextRecommender(AbstractRecommender):
         self.token_seq_field_dims = []
         self.float_seq_field_names = []
         self.float_seq_field_dims = []
+        self.embedding_field_names = []  # Fields with EMBEDDING type
+        self.embedding_field_dims = []  # Original embedding dimensions
+        self.embedding_projections = nn.ModuleDict()  # Projection layers for embeddings
         self.num_feature_field = 0
 
         if self.double_tower:
@@ -300,6 +303,18 @@ class ContextRecommender(AbstractRecommender):
             ):
                 self.float_seq_field_names.append(field_name)
                 self.float_seq_field_dims.append(dataset.num(field_name))
+            elif dataset.field2type[field_name] == FeatureType.EMBEDDING:
+                # EMBEDDING type: pre-computed embeddings, use directly
+                self.embedding_field_names.append(field_name)
+                # Store original embedding dimension (from field2seqlen)
+                original_embedding_dim = dataset.field2seqlen[field_name]
+                self.embedding_field_dims.append(original_embedding_dim)
+
+                # Create projection layer if embedding dimension doesn't match model's embedding_size
+                if original_embedding_dim != self.embedding_size:
+                    self.embedding_projections[field_name] = nn.Linear(
+                        original_embedding_dim, self.embedding_size, bias=False
+                    )
             else:
                 continue
 
@@ -571,15 +586,41 @@ class ContextRecommender(AbstractRecommender):
 
         float_seq_fields_embedding = self.embed_float_seq_fields(float_seq_fields)
 
-        if float_fields_embedding is None:
-            dense_embedding = float_seq_fields_embedding
+        # Handle EMBEDDING fields: use directly without re-embedding
+        embedding_fields = []
+        for field_name in self.embedding_field_names:
+            if field_name in interaction:
+                # Get embedding from interaction (loaded from dataset)
+                embedding = interaction[field_name]  # Shape: [batch_size, seq_len, embedding_dim] after padding
+                # Remove padding dimension if needed: [batch_size, embedding_dim]
+                if len(embedding.shape) == 3:
+                    # Take first non-padded element or mean
+                    embedding = embedding[:, 0, :]  # [batch_size, embedding_dim]
+
+                # Project to model's embedding_size if dimensions don't match
+                if field_name in self.embedding_projections:
+                    embedding = self.embedding_projections[field_name](embedding)  # [batch_size, embedding_size]
+
+                # Add dimension: [batch_size, 1, embedding_dim] or [batch_size, 1, embedding_size]
+                if len(embedding.shape) == 2:
+                    embedding = embedding.unsqueeze(1)
+                embedding_fields.append(embedding)
+
+        # Combine all dense embeddings
+        dense_parts = []
+        if float_fields_embedding is not None:
+            dense_parts.append(float_fields_embedding)
+        if float_seq_fields_embedding is not None:
+            dense_parts.append(float_seq_fields_embedding)
+        if len(embedding_fields) > 0:
+            dense_parts.append(torch.cat(embedding_fields, dim=1))
+
+        if len(dense_parts) == 0:
+            dense_embedding = None
+        elif len(dense_parts) == 1:
+            dense_embedding = dense_parts[0]
         else:
-            if float_seq_fields_embedding is None:
-                dense_embedding = float_fields_embedding
-            else:
-                dense_embedding = torch.cat(
-                    [float_seq_fields_embedding, float_fields_embedding], dim=1
-                )
+            dense_embedding = torch.cat(dense_parts, dim=1)
 
         token_fields = []
         for field_name in self.token_field_names:

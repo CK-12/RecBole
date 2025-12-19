@@ -471,9 +471,9 @@ class Dataset(torch.utils.data.Dataset):
             if isinstance(source, FeatureSource) or source != "link":
                 self.field2source[field] = source
                 self.field2type[field] = ftype
-                if not ftype.value.endswith("seq"):
+                if not ftype.value.endswith("seq") and ftype != FeatureType.EMBEDDING:
                     self.field2seqlen[field] = 1
-                if "float" in ftype.value:
+                if "float" in ftype.value or ftype == FeatureType.EMBEDDING:
                     self.field2bucketnum[field] = 2
             columns.append(field)
             usecols.append(field_type)
@@ -496,7 +496,7 @@ class Dataset(torch.utils.data.Dataset):
         seq_separator = self.config["seq_separator"]
         for field in columns:
             ftype = self.field2type[field]
-            if not ftype.value.endswith("seq"):
+            if not ftype.value.endswith("seq") and ftype != FeatureType.EMBEDDING:
                 continue
             df[field].fillna(value="", inplace=True)
             if ftype == FeatureType.TOKEN_SEQ:
@@ -509,6 +509,19 @@ class Dataset(torch.utils.data.Dataset):
                     np.array(list(map(float, filter(None, _.split(seq_separator)))))
                     for _ in df[field].values
                 ]
+            elif ftype == FeatureType.EMBEDDING:
+                # EMBEDDING type: load as float array (space-separated embedding vector)
+                df[field] = [
+                    np.array(list(map(float, filter(None, _.split(seq_separator)))))
+                    for _ in df[field].values
+                ]
+                # Set sequence length to embedding dimension
+                if len(df[field].values) > 0:
+                    embedding_dim = len(df[field].values[0])
+                    self.field2seqlen[field] = embedding_dim
+                else:
+                    self.field2seqlen[field] = 0
+                continue  # Skip max_seq_len calculation for embeddings
             max_seq_len = max(map(len, df[field].values))
             if self.config["seq_len"] and field in self.config["seq_len"]:
                 seq_len = self.config["seq_len"][field]
@@ -648,6 +661,14 @@ class Dataset(torch.utils.data.Dataset):
                     feat[field].fillna(value=0, inplace=True)
                 elif ftype == FeatureType.FLOAT:
                     feat[field].fillna(value=feat[field].mean(), inplace=True)
+                elif ftype == FeatureType.EMBEDDING:
+                    # For embeddings, fill NaN with zero vector
+                    embedding_dim = self.field2seqlen[field]
+                    feat[field] = feat[field].apply(
+                        lambda x: (
+                            np.zeros(embedding_dim, dtype=np.float64) if isinstance(x, float) else x
+                        )
+                    )
                 else:
                     dtype = np.int64 if ftype == FeatureType.TOKEN_SEQ else np.float
                     feat[field] = feat[field].apply(
@@ -2224,4 +2245,11 @@ class Dataset(torch.utils.data.Dataset):
                         torch.FloatTensor(d[: self.field2seqlen[k]]) for d in value
                     ]
                     new_data[k] = rnn_utils.pad_sequence(seq_data, batch_first=True)
+            elif ftype == FeatureType.EMBEDDING:
+                # EMBEDDING type: convert numpy array to tensor directly
+                # Shape: [batch_size, embedding_dim]
+                seq_data = [
+                    torch.FloatTensor(d[: self.field2seqlen[k]]) for d in value
+                ]
+                new_data[k] = rnn_utils.pad_sequence(seq_data, batch_first=True)
         return Interaction(new_data)

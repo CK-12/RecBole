@@ -71,12 +71,15 @@ class FeatureType(Enum):
     - ``FLOAT``: Float features like rating and timestamp.
     - ``TOKEN_SEQ``: Token sequence features like review.
     - ``FLOAT_SEQ``: Float sequence features like pretrained vector.
+    - ``EMBEDDING``: Pre-computed embedding vectors (e.g., from text encoders).
+                    These are loaded as-is without re-embedding.
     """
 
     TOKEN = "token"
     FLOAT = "float"
     TOKEN_SEQ = "token_seq"
     FLOAT_SEQ = "float_seq"
+    EMBEDDING = "embedding"
 
 
 class FeatureSource(Enum):
